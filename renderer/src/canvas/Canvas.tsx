@@ -35,6 +35,10 @@ function installFileDropHandler(editor: Editor): () => void {
     const path = event.dataTransfer.getData(T3_CANVAS_FILE_DRAG_TYPE);
     if (!path) return;
     event.preventDefault();
+    // Prevent tldraw's own drop handler (registered on the same container)
+    // from ALSO firing on this drop and creating a duplicate shape from any
+    // secondary DataTransfer entries like text/plain or text/uri-list.
+    event.stopImmediatePropagation();
 
     const pagePoint = editor.screenToPage({ x: event.clientX, y: event.clientY });
     editor.createShape({

@@ -107,7 +107,11 @@ function FileTreeRow({ entry }: { entry: MarkdownFileEntry }) {
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = "copy";
           event.dataTransfer.setData(T3_CANVAS_FILE_DRAG_TYPE, entry.path);
-          event.dataTransfer.setData("text/plain", entry.path);
+          // NOTE: intentionally NOT setting "text/plain" — tldraw's default
+          // external content handler treats text/plain as a signal to create
+          // its own text/url shape, which would result in a duplicate tile
+          // landing next to our FileShape on drop. Keep the DataTransfer
+          // single-channel to our custom MIME.
         }}
         title={entry.path}
         style={{
