@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.bun/
+bun.lockb.lock
+
+# Build output
+out/
+dist/
+dist-electron/
+*.tsbuildinfo
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.*
+!.env.tpl
+
+# Runtime state
+~/.t3-canvas/
+
+# Turbo
+.turbo/
+
+# Test coverage
+coverage/
