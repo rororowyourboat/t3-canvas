@@ -646,14 +646,91 @@ Adds `node-pty`, `@xterm/xterm`, `@xterm/addon-fit`, `@xterm/addon-webgl`.
 - Markdown frontmatter parsing + display (~80 LOC)
 - Error states: T3 Code unreachable banner, thread-not-found tile state (~50 LOC)
 
-### Phase 6 — Agent Tile Native Rendering (later, optional)
+**Reference:** [REFERENCES.md § Phase 5](./fork/REFERENCES.md) — collab-reference for settings/keyboard patterns, tldraw docs for `TLUiOverrides`.
 
-- Replace iframe with a direct React component that talks to T3 Code's WebSocket
-- `packages/t3-client/` standalone package with React hooks and types
-- Native conversation rendering, streaming, tool call display, approval UI
-- ~800 LOC, dropped T3 Code embed route dependency
+### Phase 5.5 — Cross-Agent Arrows (~400 LOC, 2 days)
 
-**Only pursue if the iframe approach from Phase 2 shows real limitations** (keyboard shortcut conflicts, performance at scale, etc.).
+**Goal:** draw an arrow from one agent tile to another and it becomes a **context pipe** — every time the source agent finishes a turn, its output flows into the target agent's next prompt. The spatial canvas becomes a node-graph workflow overlay without losing the tile paradigm.
+
+**Origin:** inspired by [`CarlosPProjects/tldraw-ai`](https://github.com/CarlosPProjects/tldraw-ai) — "Create custom shapes connected to each other. Automatically transfer context between nodes."
+
+**Why this phase exists:** the research into tldraw projects surfaced tldraw's native **binding system** — arrows aren't just visual, they can carry semantic meaning between shapes. This unlocks orchestration (e.g., "research agent → synthesizer agent → writer agent") directly on the canvas with zero new UI. It's a natural fit between Phase 5 (polish) and Phase 6 (cross-agent awareness).
+
+**Acceptance criteria:**
+
+- [ ] New custom binding type `context-pipe` using tldraw's `BindingUtil` base class
+- [ ] Drawing an arrow from agent tile A to agent tile B (with modifier key or from a custom tool) creates a `context-pipe` binding instead of a plain arrow binding
+- [ ] Context-pipe arrows render with a distinct style (dotted green, subtle animation when data flows)
+- [ ] When agent A completes a turn, its latest assistant message is cached on the shape's `meta.lastOutput`
+- [ ] When agent B sends a new turn, its prompt is prepended with `## Context from upstream agents\n\n<A's lastOutput>\n\n## User message\n\n<actual prompt>`
+- [ ] Multiple incoming pipes are concatenated in topological order (or draw order if cyclic)
+- [ ] Removing the arrow removes the binding and the upstream context
+- [ ] Bindings persist in the tldraw snapshot (they're first-class in tldraw's schema)
+
+**Files:**
+
+1. `renderer/bindings/ContextPipeBindingUtil.ts` (new) — custom `BindingUtil` subclass (~80 LOC)
+2. `renderer/bindings/binding-registry.ts` — add to `customBindingUtils` array (~10 LOC)
+3. `renderer/bindings/ContextPipeArrow.tsx` — custom arrow renderer for the dotted-green style + optional flow animation (~120 LOC)
+4. `renderer/canvas/context-pipe-tool.ts` — custom tool that the user selects to draw context-pipes (vs. plain arrows) (~60 LOC)
+5. `renderer/canvas/ui-overrides.tsx` — add "Context Pipe" to toolbar with a distinct icon (~20 LOC)
+6. `renderer/shapes/AgentShape/AgentShapeUtil.tsx` — on turn completion, cache output to `shape.meta.lastOutput` (~20 LOC patch)
+7. `renderer/shapes/AgentShape/NewAgentDialog.tsx` — when constructing the prompt, walk incoming bindings via `editor.getBindingsToShape(shapeId, "context-pipe")` and prepend upstream outputs (~50 LOC patch)
+8. `renderer/canvas/shape-registry.ts` — pass `bindingUtils: [...defaultBindingUtils, ContextPipeBindingUtil]` to `createTLStore` (~5 LOC patch)
+9. Schema migration for `context-pipe` binding type (~20 LOC)
+
+Est. ~385 LOC. **Reference:** [REFERENCES.md § Phase 5.5](./fork/REFERENCES.md) — `CarlosPProjects/tldraw-ai` for the binding-as-data-pipe pattern, tldraw docs for `BindingUtil` basics.
+
+**Non-goals for Phase 5.5:**
+
+- ❌ Cyclic pipe resolution (just prevent cycles at draw time; deeper orchestration is Phase 6)
+- ❌ Live output streaming through the pipe (the target agent sees the upstream output only on its NEXT turn — no mid-turn updates)
+- ❌ Pipe-level filtering / transformation (no "only pass the last N tokens" yet)
+- ❌ Visual indication on the target tile that it has incoming context (Phase 6 adds this via the Parts system)
+
+### Phase 6 — Cross-Agent Awareness Layer (agent-template integration) (~800 LOC, 1 week)
+
+**Goal (reframed from draft 2):** instead of "replace the iframe with a native React renderer", Phase 6 now adds an **agent-aware context layer on top of the existing iframe tiles**, inspired directly by the architecture in [`tldraw/agent-template`](https://github.com/tldraw/agent-template). The iframe stays — it's a perfectly good way to host a T3 Code thread. What we add is the **ambient awareness**: each agent tile knows about the other tiles around it, the user's recent actions, the frame it lives in, and can use that as richer context for the next turn.
+
+**Why the reframe:** the research into `tldraw/agent-template` revealed a much better abstraction than "build a native conversation UI from scratch." Their **Parts** pattern (typed context slices) and **Actions** pattern (declarative canvas operations) are directly adaptable — and they're what actually make agents behave intelligently in a multi-shape environment. Ripping out the iframe would be throwing away a working thing to rebuild something the user never complained about. Adding the Parts layer gives us the real win: agents that understand their spatial neighborhood.
+
+**Acceptance criteria:**
+
+- [ ] New `packages/t3-canvas-parts/` with the Parts abstraction: `PromptPartUtil` base class + concrete parts for `FrameMembersPart`, `SelectedTilesPart`, `RecentOutputsPart`, `UserContextPart`, `ViewportBoundsPart`, `UserActionHistoryPart`
+- [ ] Each agent tile has an enhanced prompt path that runs registered parts to assemble context before dispatching to T3 Code
+- [ ] Cross-agent context: when a user sends a turn to agent A, the prompt includes a brief summary of what other agent tiles in the same frame are working on
+- [ ] LOD representation for off-frame tiles: agent A sees a "blurry" summary of tiles outside its frame instead of the full conversation
+- [ ] Agent-owned todo list: each agent tile can persist a `todos: string[]` array on `shape.meta` visible as a small overlay chip on the tile
+- [ ] Optional: `editor.toImage({ shapes: [frame] })` for multimodal context — let agents "see" other tiles as images when text isn't enough
+- [ ] Iframe tile rendering is UNCHANGED — we're adding a layer above, not replacing
+
+**Files:**
+
+1. `packages/t3-canvas-parts/src/PromptPart.ts` — base class, following `agent-template/client/parts/PromptPartUtil.ts` (~60 LOC)
+2. `packages/t3-canvas-parts/src/parts/FrameMembersPart.ts` (~80 LOC)
+3. `packages/t3-canvas-parts/src/parts/SelectedTilesPart.ts` (~60 LOC)
+4. `packages/t3-canvas-parts/src/parts/RecentOutputsPart.ts` (~80 LOC)
+5. `packages/t3-canvas-parts/src/parts/UserContextPart.ts` (~60 LOC)
+6. `packages/t3-canvas-parts/src/parts/ViewportBoundsPart.ts` (~40 LOC)
+7. `packages/t3-canvas-parts/src/parts/UserActionHistoryPart.ts` (~80 LOC)
+8. `packages/t3-canvas-parts/src/parts/LODShapesPart.ts` — blurry + peripheral representations (~120 LOC)
+9. `packages/t3-canvas-parts/src/assemble.ts` — run all registered parts, serialize to prompt prefix (~60 LOC)
+10. `renderer/shapes/AgentShape/prompt-pipeline.ts` — new module that hooks the Parts system into the agent tile's prompt path (~80 LOC)
+11. `renderer/shapes/AgentShape/TodoOverlay.tsx` — render the agent's todo list as a small chip on the tile (~60 LOC)
+12. `renderer/canvas/parts-registry.ts` — centralized list of enabled Parts (~20 LOC)
+
+Est. ~800 LOC. **Reference:** [REFERENCES.md § Phase 6](./fork/REFERENCES.md) — extensively grep `tldraw-agent-template-reference/client/parts/` and `client/agent/` during this phase.
+
+**Non-goals for Phase 6:**
+
+- ❌ Replacing the iframe agent renderer (scrapped from draft 2's plan)
+- ❌ Making agents manipulate each other's canvas state directly (too much power, not enough guardrails)
+- ❌ Multi-agent dispatch or routing logic — agents still only respond to user turns, they just see more context when they do
+- ❌ Building our own LLM client — we still route everything through T3 Code's existing provider plumbing via the iframe
+
+### Phase 7 (was Phase 6) — Native Agent Rendering (reserved, pursue only on demand)
+
+Originally Phase 6 in draft 2: replace the iframe with a native React WebSocket client for T3 Code. Deferred indefinitely because Phase 6's Parts layer likely gives us most of the value without the rewrite. Pursue only if the iframe shows real material limits in practice (keyboard shortcut conflicts, memory bloat at 20+ tiles, streaming performance issues).
 
 ---
 
@@ -752,11 +829,34 @@ State stored in `~/.t3-canvas/`. Dev mode isolates under `~/.t3-canvas/dev/`.
 
 ## Meta
 
-- Total estimated new code: ~2550 LOC across Phases 0–5
-- Every shape follows the locked-in tldraw patterns above — no drift
-- Every phase has explicit acceptance criteria
-- Every phase has explicit non-goals
-- When stuck, grep `~/Documents/Github/personal/collab-reference/` for patterns, but DO NOT copy code (license reasons + different paradigm)
-- tldraw docs URL: https://tldraw.dev — keep a tab open during Phase 1
+### Scope
 
-**Next action:** approve this plan, then execute Phase 0 (the spike). If the spike passes its four acceptance criteria, commit to the full rebuild. If not, fall back to the fork plan (still in git history as `b0b18e1`).
+| Phase | LOC est | Cumulative | Status |
+|---|---|---|---|
+| 0 — Spike | ~200 | 200 | In progress (worktree `feat/phase-0-spike`) |
+| 1 — Skeleton | ~400 | 600 | Blocked on #1 |
+| 2 — Agent shape | ~555 | 1155 | Blocked on #2 |
+| 3 — File tree + file shapes | ~700 | 1855 | Blocked on #2 |
+| 4 — Terminal shape | ~400 | 2255 | Blocked on #2 |
+| 5 — Polish | ~400 | 2655 | Blocked on 3+4+5 |
+| **5.5 — Cross-agent arrows (NEW)** | **~385** | **3040** | Blocked on #5 |
+| **6 — Cross-agent awareness layer (NEW framing)** | **~800** | **3840** | Blocked on #5.5 |
+| 7 — Native agent rendering (deferred) | ~800 | 4640 | Reserved, pursue on demand only |
+
+**Working assumption:** Phases 0–5.5 get us to a compelling daily driver (~3040 LOC). Phase 6 is the qualitative leap. Phase 7 is deferred indefinitely.
+
+### Guiding rules
+
+- Every shape follows the locked-in tldraw patterns in [§ tldraw patterns we will follow](#tldraw-patterns-we-will-follow) — no drift
+- Every phase has explicit acceptance criteria + explicit non-goals
+- When stuck on UX/file-handling, grep `~/Documents/Github/personal/collab-reference/` for *patterns*, but DO NOT copy code (license reasons + different paradigm — see [REFERENCES.md](./fork/REFERENCES.md))
+- When stuck on agent/context design, grep `~/Documents/Github/personal/tldraw-agent-template-reference/client/parts/` and `client/agent/` — MIT, safe to derive from
+- tldraw docs: https://tldraw.dev — keep a tab open during Phase 1, 5.5, and 6
+- Every commit signed (global git config handles this automatically)
+- Every phase opens a feature branch off main, lands via PR — no direct pushes to main for code
+
+### External references
+
+All external project references, pattern-to-phase mapping, and "what to grep when" live in [**fork/REFERENCES.md**](./fork/REFERENCES.md). Consult it before starting each phase.
+
+**Next action:** Phase 0 spike is committed at `feat/phase-0-spike` (see [#1](https://github.com/rororowyourboat/t3-canvas/issues/1)). Once the four acceptance criteria validate interactively, tag `v0.0.0-spike`, close #1, unblock #2.
