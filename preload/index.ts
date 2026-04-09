@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 /**
  * Typed IPC bridge exposed as `window.t3canvas` to the renderer.
@@ -24,6 +24,43 @@ export interface MarkdownFileEntry {
   readonly mtime: string;
 }
 
+/**
+ * Phase 4 wire types. Mirrors `PtyDataEvent` / `PtyExitEvent` / `PtySpawnResult`
+ * in `electron/ipc.ts` and `electron/pty-host.ts`. Same rationale as
+ * {@link MarkdownFileEntry}: the preload bundle can't reach across to the
+ * main-process TypeScript, so we re-declare and re-export via `T3CanvasApi`.
+ */
+export interface PtySpawnResult {
+  readonly sessionId: string;
+  readonly pid: number;
+  readonly cwd: string;
+}
+
+export interface PtySpawnOptions {
+  readonly cwd: string;
+  readonly cols: number;
+  readonly rows: number;
+  readonly shell?: string;
+}
+
+export interface PtyDataEvent {
+  readonly sessionId: string;
+  readonly data: string;
+}
+
+export interface PtyExitEvent {
+  readonly sessionId: string;
+  readonly exitCode: number;
+  readonly signal?: number;
+}
+
+type PtyDataListener = (sessionId: string, data: string) => void;
+type PtyExitListener = (
+  sessionId: string,
+  exitCode: number,
+  signal?: number,
+) => void;
+
 const api = {
   canvas: {
     loadSnapshot: (): Promise<unknown> => ipcRenderer.invoke("canvas:loadSnapshot"),
@@ -35,6 +72,41 @@ const api = {
       ipcRenderer.invoke("file:readMarkdownTree", rootPath),
     readContent: (absPath: string): Promise<string> =>
       ipcRenderer.invoke("file:readContent", absPath),
+  },
+  pty: {
+    spawn: (opts: PtySpawnOptions): Promise<PtySpawnResult> =>
+      ipcRenderer.invoke("pty:spawn", opts),
+    write: (sessionId: string, data: string): Promise<void> =>
+      ipcRenderer.invoke("pty:write", sessionId, data),
+    resize: (sessionId: string, cols: number, rows: number): Promise<void> =>
+      ipcRenderer.invoke("pty:resize", sessionId, cols, rows),
+    kill: (sessionId: string): Promise<void> =>
+      ipcRenderer.invoke("pty:kill", sessionId),
+    /**
+     * Subscribe to every `pty:data` broadcast. The listener receives events
+     * for ALL sessions — the caller is responsible for filtering by its own
+     * `sessionId`. Returns an unsubscribe function that removes exactly the
+     * handler we attached.
+     */
+    onData: (listener: PtyDataListener): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: PtyDataEvent): void => {
+        listener(payload.sessionId, payload.data);
+      };
+      ipcRenderer.on("pty:data", handler);
+      return () => {
+        ipcRenderer.removeListener("pty:data", handler);
+      };
+    },
+    /** Same fan-out pattern as {@link onData} but for exit events. */
+    onExit: (listener: PtyExitListener): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: PtyExitEvent): void => {
+        listener(payload.sessionId, payload.exitCode, payload.signal);
+      };
+      ipcRenderer.on("pty:exit", handler);
+      return () => {
+        ipcRenderer.removeListener("pty:exit", handler);
+      };
+    },
   },
 } as const;
 
