@@ -8,7 +8,9 @@
     "dev": "ELECTRON_DISABLE_SANDBOX=1 electron-vite dev",
     "build": "electron-vite build",
     "preview": "ELECTRON_DISABLE_SANDBOX=1 electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "postinstall": "electron-rebuild",
+    "rebuild:native": "electron-rebuild"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
@@ -20,6 +22,7 @@
     "tldraw": "^4.2.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
     "@types/lodash-es": "^4.17.12",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

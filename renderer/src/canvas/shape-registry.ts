@@ -8,6 +8,8 @@ import {
 import { AgentShapeUtil } from "../shapes/AgentShape/AgentShapeUtil";
 import { AgentShapeTool } from "../shapes/AgentShape/AgentShapeTool";
 import { FileShapeUtil } from "../shapes/FileShape/FileShapeUtil";
+import { TerminalShapeUtil } from "../shapes/TerminalShape/TerminalShapeUtil";
+import { TerminalShapeTool } from "../shapes/TerminalShape/TerminalShapeTool";
 
 /**
  * Central registry for every custom shape, tool, and binding the app adds on
@@ -16,7 +18,7 @@ import { FileShapeUtil } from "../shapes/FileShape/FileShapeUtil";
  *   Phase 2       → AgentShapeUtil, AgentShapeTool            ← DONE
  *   Phase 3-lite  → FileShapeUtil (markdown-only)             ← DONE
  *   Phase 3-full  → CodeEditor / ImageView variants of FileShape
- *   Phase 4       → TerminalShapeUtil, TerminalShapeTool
+ *   Phase 4       → TerminalShapeUtil, TerminalShapeTool      ← DONE
  *   Phase 5.5     → ContextPipeBindingUtil, ContextPipeTool
  *
  * **Do not mutate these arrays at runtime.** tldraw's store schema is built
@@ -36,8 +38,9 @@ import { FileShapeUtil } from "../shapes/FileShape/FileShapeUtil";
 export const customShapeUtils: TLAnyShapeUtilConstructor[] = [
   AgentShapeUtil,
   FileShapeUtil,
+  TerminalShapeUtil,
 ];
-export const customTools: TLStateNodeConstructor[] = [AgentShapeTool];
+export const customTools: TLStateNodeConstructor[] = [AgentShapeTool, TerminalShapeTool];
 export const customBindingUtils: TLAnyBindingUtilConstructor[] = [];
 
 export const allShapeUtils: TLAnyShapeUtilConstructor[] = [
