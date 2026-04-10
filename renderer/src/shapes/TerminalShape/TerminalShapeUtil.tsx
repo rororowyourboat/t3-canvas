@@ -106,11 +106,14 @@ function TerminalShapeView({ shape }: { readonly shape: TLTerminalShape }) {
 
   return (
     <HTMLContainer style={containerStyle(shape.props.w, shape.props.h)}>
-      <div
-        style={headerStyle}
-        onPointerDown={(e) => e.stopPropagation()}
-        title={shape.props.cwd || undefined}
-      >
+      {/*
+        The header is the drag handle for the whole tile. It must NOT
+        stopPropagation on pointer events — if it does, tldraw's canvas
+        listener never sees the pointerdown and the shape cannot be moved.
+        The terminal body (Terminal.tsx) still stops propagation so xterm
+        can handle selection/copy without the canvas stealing gestures.
+      */}
+      <div style={headerStyle} title={shape.props.cwd || undefined}>
         <span aria-hidden>&#x25B8;_</span>
         <span style={headerTitleStyle}>{headerTitle}</span>
       </div>
