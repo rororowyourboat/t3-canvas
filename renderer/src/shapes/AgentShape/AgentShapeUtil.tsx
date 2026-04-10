@@ -155,15 +155,24 @@ function AgentHeader({
   readonly canOpenDialog: boolean;
   readonly onOpenDialog: () => void;
 }) {
-  // The header doubles as the dialog trigger for already-configured tiles.
-  // Clicking it (rather than requiring a context menu) keeps the discovery
-  // cost low for Phase 2 — the whole interaction is in the tile.
+  // The header is BOTH the drag handle AND the dialog reopen trigger.
+  // We use `onClick` (not `onPointerDown`) so the native "click" semantics
+  // — pointerdown + pointerup without movement — naturally distinguishes
+  // a click (open dialog) from a drag (move shape). Drag pointerdowns
+  // propagate to tldraw unimpeded because there's no onPointerDown handler
+  // here at all. A click that doesn't move fires onClick, which is where
+  // we open the dialog.
+  //
+  // The click handler still stops propagation because a full click cycle
+  // on a shape's child also fires tldraw's own click handler which would
+  // try to enter edit mode; we want the dialog to be the only effect.
   return (
     <div
       style={headerStyle}
-      onPointerDown={(e) => {
+      onClick={(e) => {
+        if (!canOpenDialog) return;
         e.stopPropagation();
-        if (canOpenDialog) onOpenDialog();
+        onOpenDialog();
       }}
       role={canOpenDialog ? "button" : undefined}
       title={canOpenDialog ? "Reconfigure this agent" : undefined}
